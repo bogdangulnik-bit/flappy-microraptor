@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Flappy Microraptor</title>
+<link rel="manifest" href="manifest.json">
+<style>
+*{margin:0;padding:0;box-sizing:border-box;touch-action:none;user-select:none}
+body{background:#0a0a1a;color:white;font-family:Arial;overflow:hidden}
+canvas{display:block;width:100vw;height:100vh}
+#score{position:fixed;top:15px;left:0;right:0;text-align:center;font-size:48px;font-weight:bold;text-shadow:0 0 10px black;z-index:10}
+#best{position:fixed;top:70px;left:0;right:0;text-align:center;font-size:16px;opacity:.8;z-index:10}
+#tap{position:fixed;bottom:120px;left:0;right:0;text-align:center;font-size:20px;z-index:10;animation:blink 1s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+#over{display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);text-align:center;padding-top:30vh;z-index:20}
+#over button{padding:14px 30px;font-size:20px;background:#ff9500;color:white;border:none;border-radius:12px;margin-top:18px}
+#btnSound{position:fixed;top:12px;right:12px;z-index:30;background:rgba(0,0,0,.6);border:1px solid white;color:white;padding:8px 12px;border-radius:20px}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="score">0</div>
+<div id="best">BEST: <span id="bestVal">0</span></div>
+<div id="tap">👆 TAPNI DA LETIŠ!</div>
+<button id="btnSound" onclick="toggleSound()">🔊 ON</button>
+<div id="over"><h1 style="font-size:42px">🦖 GAME OVER</h1><p id="final" style="margin-top:10px;font-size:20px"></p><button onclick="location.reload()">IGRAJ OPET 🔁</button></div>
+<script>
+const canvas=document.getElementById('game'),ctx=canvas.getContext('2d');
+canvas.width=innerWidth;canvas.height=innerHeight;
+let audioCtx=null,soundOn=true;
+function initAudio(){if(!audioCtx)audioCtx=new (window.AudioContext||window.webkitAudioContext)();if(audioCtx.state==='suspended')audioCtx.resume();}
+function beep(f,d,t='square',v=0.12){if(!soundOn||!audioCtx)return;let o=audioCtx.createOscillator(),g=audioCtx.createGain();o.type=t;o.frequency.value=f;g.gain.value=v;o.connect(g);g.connect(audioCtx.destination);o.start();o.stop(audioCtx.currentTime+d);}
+function playFlap(){beep(600,0.1,'sine',0.15);}
+function playScore(){beep(880,0.12,'sine',0.2);setTimeout(()=>beep(1100,0.15,'sine',0.2),80);}
+function playHit(){beep(200,0.3,'sawtooth',0.2);setTimeout(()=>beep(100,0.4,'sawtooth',0.2),200);}
+function toggleSound(){soundOn=!soundOn;document.getElementById('btnSound').textContent=soundOn?'🔊 ON':'🔇 OFF';initAudio();}
+addEventListener('touchstart',initAudio,{once:true});addEventListener('click',initAudio,{once:true});
+let bird={x:innerWidth*0.3,y:innerHeight/2,vy:0,r:26,rot:0,wing:0};
+let pipes=[],particles=[],score=0,best=localStorage.getItem('microraptor_best')||0,started=false,gameOver=false,speed=2.6;
+document.getElementById('bestVal').textContent=best;
+function spawnPipe(){
+ let gap=170, minY=80, maxY=innerHeight-200;
+ let gapY=minY+Math.random()*(maxY-minY);
+ pipes.push({x:innerWidth,gapY,gap,passed:false});
+}
+setInterval(()=>{if(started&&!gameOver)spawnPipe();},1400);
+function flap(){
+ if(gameOver) return;
+ if(!started){started=true;document.getElementById('tap').style.display='none';}
+ bird.vy=-7.5; playFlap(); bird.wing=10;
+}
+addEventListener('touchstart',e=>{if(e.target.tagName!=='BUTTON')flap();},{passive:true});
+addEventListener('keydown',e=>{if(e.key===' ')flap();});
+addEventListener('click',e=>{if(e.target.tagName!=='BUTTON'&&e.target.tagName!=='CANVAS')return;});
+canvas.addEventListener('click',flap);
+function addParticle(x,y,color){for(let i=0;i<5;i++)particles.push({x,y,vx:(Math.random()-0.5)*4,vy:(Math.random()-0.5)*4,life:25,color});}
+function update(){
+ if(!started||gameOver) return;
+ bird.vy+=0.45; bird.y+=bird.vy; bird.rot=Math.max(-0.4,Math.min(0.6,bird.vy*0.05)); bird.wing=Math.max(0,bird.wing-1);
+ if(bird.y+bird.r>=innerHeight-10||bird.y-bird.r<=0){die();}
+ for(let p of pipes){
+  p.x-=speed;
+  if(!p.passed&&p.x+50<bird.x){p.passed=true;score++;document.getElementById('score').textContent=score;playScore();if(score>best){best=score;localStorage.setItem('microraptor_best',best);document.getElementById('bestVal').textContent=best;}}
+  // sudar
+  if(bird.x+bird.r>p.x&&bird.x-bird.r<p.x+60){
+   if(bird.y-bird.r<p.gapY-p.gap/2||bird.y+bird.r>p.gapY+p.gap/2){die();}
+  }
+ }
+ pipes=pipes.filter(p=>p.x>-70);
+ particles.forEach(pt=>{pt.x+=pt.vx;pt.y+=pt.vy;pt.life--;}); particles=particles.filter(pt=>pt.life>0);
+ if(score>10) speed=3.0; if(score>20) speed=3.4; if(score>30) speed=3.8;
+}
+function die(){
+ if(gameOver) return; gameOver=true; playHit(); addParticle(bird.x,bird.y,'#ff2d55',20);
+ document.getElementById('over').style.display='block'; document.getElementById('final').textContent='Bodovi: '+score+' | Best: '+best+' 🦖';
+}
+function draw(){
+ // pozadina - zalazak sunca džungla
+ let grad=ctx.createLinearGradient(0,0,0,innerHeight);
+ grad.addColorStop(0,'#2a0a4a'); grad.addColorStop(0.4,'#ff6b35'); grad.addColorStop(0.7,'#2e8b57'); grad.addColorStop(1,'#0a2e0a');
+ ctx.fillStyle=grad; ctx.fillRect(0,0,innerWidth,innerHeight);
+ // sunce
+ ctx.save(); ctx.shadowBlur=30; ctx.shadowColor='#ffcc00'; ctx.fillStyle='#ffcc00'; ctx.beginPath(); ctx.arc(innerWidth*0.75,innerHeight*0.25,45,0,Math.PI*2); ctx.fill(); ctx.restore();
+ // oblaci
+ ctx.fillStyle='rgba(255,255,255,.25)';
+ for(let i=0;i<3;i++){ let cx=((i*300+Date.now()*0.01)%(innerWidth+200))-100; ctx.beginPath(); ctx.ellipse(cx,80+i*40,70,18,0,0,Math.PI*2); ctx.fill(); }
+ // cijevi - stijene
+ for(let p of pipes){
+  ctx.fillStyle='#4a4a4a'; ctx.fillRect(p.x,0,60,p.gapY-p.gap/2);
+  ctx.fillStyle='#333'; ctx.fillRect(p.x,0,60,10);
+  ctx.fillStyle='#666'; ctx.fillRect(p.x+8,10,8,p.gapY-p.gap/2-10);
+  ctx.fillStyle='#4a4a4a'; ctx.fillRect(p.x,p.gapY+p.gap/2,60,innerHeight);
+  ctx.fillStyle='#333'; ctx.fillRect(p.x,p.gapY+p.gap/2,60,10);
+  // kristali na stijeni
+  ctx.fillStyle='#00e5ff'; ctx.fillRect(p.x+10,p.gapY-p.gap/2-18,10,18);
+  ctx.fillStyle='#bf00ff'; ctx.fillRect(p.x+35,p.gapY+p.gap/2+12,10,18);
+ }
+ // tlo
+ ctx.fillStyle='#1a4d1a'; ctx.fillRect(0,innerHeight-10,innerWidth,10);
+ // čestice
+ for(let pt of particles){ctx.globalAlpha=pt.life/25;ctx.fillStyle=pt.color;ctx.beginPath();ctx.arc(pt.x,pt.y,4,0,Math.PI*2);ctx.fill();} ctx.globalAlpha=1;
+ // MICRORAPTOR
+ ctx.save(); ctx.translate(bird.x,bird.y); ctx.rotate(bird.rot);
+ ctx.shadowBlur=15; ctx.shadowColor='#00e5ff';
+ // tijelo
+ ctx.fillStyle='#2ecc71'; ctx.beginPath(); ctx.ellipse(0,0,30,20,0,0,Math.PI*2); ctx.fill();
+ // 4 krila - MICRORAPTOR!
+ let wingY=Math.sin(Date.now()*0.03+bird.wing)*8;
+ ctx.fillStyle='#1e9e2e'; ctx.beginPath(); ctx.ellipse(-5,-18+wingY,22,8,-0.4,0,Math.PI*2); ctx.fill();
+ ctx.fillStyle='#27ae60'; ctx.beginPath(); ctx.ellipse(-5,18-wingY,22,8,0.4,0,Math.PI*2); ctx.fill();
+ ctx.fillStyle='#f39c12'; ctx.beginPath(); ctx.ellipse(5,-14+wingY,18,6,-0.3,0,Math.PI*2); ctx.fill();
+ ctx.fillStyle='#e67e22'; ctx.beginPath(); ctx.ellipse(5,14-wingY,18,6,0.3,0,Math.PI*2); ctx.fill();
+ // glava
+ ctx.fillStyle='#2ecc71'; ctx.beginPath(); ctx.arc(22,-5,14,0,Math.PI*2); ctx.fill();
+ // oko
+ ctx.fillStyle='white'; ctx.beginPath(); ctx.arc(27,-7,5,0,Math.PI*2); ctx.fill();
+ ctx.fillStyle='black'; ctx.beginPath(); ctx.arc(28,-7,2.5,0,Math.PI*2); ctx.fill();
+ // kljun
+ ctx.fillStyle='#ff9500'; ctx.beginPath(); ctx.moveTo(34,-5); ctx.lineTo(46,-2); ctx.lineTo(34,0); ctx.fill();
+ // rep
+ ctx.fillStyle='#1e9e2e'; ctx.beginPath(); ctx.moveTo(-28,0); ctx.lineTo(-48,-8); ctx.lineTo(-48,8); ctx.fill();
+ ctx.restore();
+ // početni tekst
+ if(!started){ ctx.fillStyle='white'; ctx.font='bold 20px Arial'; ctx.textAlign='center'; ctx.fillText('🦖 MICRORAPTOR',innerWidth/2,innerHeight/2-80); ctx.font='16px Arial'; ctx.fillText('Tapni da letiš!',innerWidth/2,innerHeight/2-55); }
+}
+function loop(){update();draw();requestAnimationFrame(loop);} loop();
+</script>
+</body>
+</html>
